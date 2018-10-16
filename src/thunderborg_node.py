@@ -9,13 +9,13 @@ class ThunderBorgNode:
     def __init__(self):
         self.__thunderborg = thunderborg_lib.ThunderBorg()  # create the thunderborg object
         self.__thunderborg.Init()
-        if not __thunderborg.foundChip:
+        if not self.__thunderborg.foundChip:
             rospy.logdebug("ThunderBorg board not found")
         else:
             # Setup board to turn off motors if we don't send a message every 1/4 second          
             self.__thunderborg.SetCommsFailsafe(True)
             
-         Subscribe to topics
+        # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
                 
         # Publish topics
