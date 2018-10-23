@@ -88,14 +88,14 @@ class ThunderBorgNode:
         self.pid2__.update(self.feedback2__)
         
         # Use the current PID outputs to adjust the motor values
-        self.motor1Speed__ = self.pid1__.SetPoint + self.pid1__.output
-        self.motor2Speed__ = self.pid2__.SetPoint + self.pid2__.output       	
+        self.motor1Speed__ = self.pid1__.output
+        self.motor2Speed__ = self.pid2__.output       	
         self.__thunderborg.SetMotor1(self.motor1Speed__)
         self.__thunderborg.SetMotor2(self.motor2Speed__)
-	    print(self.feedback1__)
-	    print(self.pid1__.SetPoint)
+        print(self.pid1__.SetPoint)
+	    print(self.feedback1__)	    
 	    print(self.pid1__.output) 
-	    print("   ")
+	    print("---")
 
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
