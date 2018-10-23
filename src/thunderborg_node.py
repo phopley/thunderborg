@@ -21,11 +21,11 @@ class ThunderBorgNode:
 
         # Configure the PIDs
         self.pid1__ = pid_lib.PID(1.2, 1.0, 0.001) # TODO P, I & D values to become parameters in the parameter server
-        self.pid1__.Setpoint = 0.0
+        self.pid1__.SetPoint = 0.0
         self.pid1__.setSampleTime(0.05)
         
         self.pid2__ = pid_lib.PID(1.2, 1.0, 0.001) # TODO P, I & D values to become parameters in the parameter server
-        self.pid2__.Setpoint = 0.0
+        self.pid2__.SetPoint = 0.0
         self.pid2__.setSampleTime((1/RATE)/2)
         
         # Motor velocity feedback values
@@ -45,7 +45,7 @@ class ThunderBorgNode:
         # Calculate the requested speed of each wheel
         speed_wish_right = ((msg.angular.z * WHEEL_DIST) / 2) + msg.linear.x
         speed_wish_left = (msg.linear.x * 2) - speed_wish_right
-                
+	
         # TODO This next bit is a start but we need the odometer feedback and a PID to get the output speed matching the demand speed
         # wish_speed/1.27 (1.27 m/s) gives the Thunderborg motor value (OK for teleop)
         #self.__thunderborg.SetMotor1(speed_wish_right/1.27)
@@ -53,9 +53,9 @@ class ThunderBorgNode:
         
         # Update any change to setpoint
         # TODO 1.27 should come from parameter server it is the actual top loaded speed. We limit our speed to 1m/s
-        self.pid1__.setpoint = speed_wish_right/1.27
-        self.pid2__.setpoint = speed_wish_left/1.27
-        
+        self.pid1__.SetPoint = speed_wish_right/1.27
+        self.pid2__.SetPoint = speed_wish_left/1.27
+
     # Callback for tacho message
     def TachoCallback(self, msg):
         # Store the feedback values for the next time we run the PIDs
@@ -77,10 +77,13 @@ class ThunderBorgNode:
         
         # Use the current PID outputs to adjust the motor values
         motor1Speed = self.pid1__.SetPoint + self.pid1__.output
-        motor2Speed = self.pid2__.SetPoint + self.pid2__.output       
+        motor2Speed = self.pid2__.SetPoint + self.pid2__.output       	
         self.__thunderborg.SetMotor1(motor1Speed)
         self.__thunderborg.SetMotor2(motor2Speed)
-              
+	print(self.feedback1__)
+	print(self.pid1__.SetPoint)
+	print(self.pid1__.output) 
+	print("   ")
 
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
