@@ -31,6 +31,10 @@ class ThunderBorgNode:
         # Motor velocity feedback values
         self.feedback1__ = 0.0
         self.feedback2__ = 0.0
+        
+        # Current motor speeds
+        self.motor1Speed__ = 0.0
+        self.motor2Speed__ = 0.0
                     
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
@@ -58,9 +62,17 @@ class ThunderBorgNode:
 
     # Callback for tacho message
     def TachoCallback(self, msg):
-        # Store the feedback values for the next time we run the PIDs
-        self.feedback1__ = msg.rwheelVel
-        self.feedback2__ = msg.lwheelVel
+        # Store the feedback values for the next time we run the PIDs. Feedback does contain a sign so
+        # set the sign based on the direction that we last commanded the motors
+        if(self.motor1Speed__ < 0):
+            self.feedback1__ = -(msg.rwheelVel)
+        else:
+            self.feedback1__ = msg.rwheelVel
+            
+        if(self.motor2Speed__ < 0):
+            self.feedback2__ = -(msg.lwheelVel)
+        else:
+            self.feedback2__ = msg.lwheelVel
         
     # Publish the battery status    
     def PublishStatus(self):
@@ -76,14 +88,14 @@ class ThunderBorgNode:
         self.pid2__.update(self.feedback2__)
         
         # Use the current PID outputs to adjust the motor values
-        motor1Speed = self.pid1__.SetPoint + self.pid1__.output
-        motor2Speed = self.pid2__.SetPoint + self.pid2__.output       	
-        self.__thunderborg.SetMotor1(motor1Speed)
-        self.__thunderborg.SetMotor2(motor2Speed)
-	print(self.feedback1__)
-	print(self.pid1__.SetPoint)
-	print(self.pid1__.output) 
-	print("   ")
+        self.motor1Speed__ = self.pid1__.SetPoint + self.pid1__.output
+        self.motor2Speed__ = self.pid2__.SetPoint + self.pid2__.output       	
+        self.__thunderborg.SetMotor1(self.motor1Speed__)
+        self.__thunderborg.SetMotor2(self.motor2Speed__)
+	    print(self.feedback1__)
+	    print(self.pid1__.SetPoint)
+	    print(self.pid1__.output) 
+	    print("   ")
 
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
