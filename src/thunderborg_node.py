@@ -21,14 +21,14 @@ class ThunderBorgNode:
             self.__thunderborg.SetCommsFailsafe(True)
 
         # Configure the PIDs
-        self.pid1__ = pid_lib.PID(1.2, 1.0, 0.001) # TODO P, I & D values to become parameters in the parameter server
+        self.pid1__ = pid_lib.PID(0.8, 2.5, 0.0) # TODO P, I & D values to become parameters in the parameter server
         self.pid1__.SetPoint = 0.0
-        self.pid1__.setSampleTime(0.05)
-        
-        self.pid2__ = pid_lib.PID(1.2, 1.0, 0.001) # TODO P, I & D values to become parameters in the parameter server
+        self.pid1__.setSampleTime(0.25)
+
+        self.pid2__ = pid_lib.PID(0.8, 2.5, 0.0) # TODO P, I & D values to become parameters in the parameter server
         self.pid2__.SetPoint = 0.0
-        self.pid2__.setSampleTime((1/RATE)/2)
-        
+        self.pid2__.setSampleTime(0.25)
+
         # Motor velocity feedback values
         self.feedback1__ = 0.0
         self.feedback2__ = 0.0
@@ -36,7 +36,7 @@ class ThunderBorgNode:
         # Current motor speeds
         self.motor1Speed__ = 0.0
         self.motor2Speed__ = 0.0
-                    
+
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
         self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
@@ -84,13 +84,13 @@ class ThunderBorgNode:
 #            self.feedback2__ = -(self.feedback2__)
 
         # Update the PIDS
-        self.pid1__.update(self.feedback1__/SPEED_RATIO) 
+        self.pid1__.update(self.feedback1__/SPEED_RATIO)
         self.pid2__.update(self.feedback2__/SPEED_RATIO)
-        
+
         # Use the current PID outputs to adjust the motor values
-        self.motor1Speed__ = self.pid1__.output        
+        self.motor1Speed__ = self.pid1__.output
         self.motor2Speed__ = self.pid2__.output
-               	
+
         self.__thunderborg.SetMotor1(self.motor1Speed__)
         self.__thunderborg.SetMotor2(self.motor2Speed__)
         print(self.pid1__.SetPoint)
