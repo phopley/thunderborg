@@ -5,6 +5,7 @@ import thunderborg_lib
 import pid_lib
 from sensor_msgs.msg import BatteryState
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Vector3   # Temp message for diagnostics
 from tacho_msgs.msg import tacho
 
 RATE = 10
@@ -43,6 +44,8 @@ class ThunderBorgNode:
                 
         # Publish topics
         self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
+        self.__pid_pub = rospy.Publisher("PID", Vector3, queue_size=1)
+        self.__diag_pub = rospy.Publisher("DIAGNOSTICS", Vector3, queue_size=1)
 
     # Callback for cmd_vel message
     def VelCallback(self, msg):
@@ -93,10 +96,18 @@ class ThunderBorgNode:
 
         self.__thunderborg.SetMotor1(self.motor1Speed__)
         self.__thunderborg.SetMotor2(self.motor2Speed__)
-        print(self.pid1__.SetPoint)
-        print(self.feedback1__/SPEED_RATIO)
-        print(self.pid1__.output)
-        print("---")
+        
+        pid_state = Vector3()
+        pid_state.x = self.pid1__.PTerm
+        pid_state.y = self.pid1__.ITerm
+        pid_state.z = self.pid1__.DTerm
+        self.__pid_pub.publish(pid_state)
+        
+        motor_state = Vector3()
+        motor_state.x = self.pid1__.SetPoint
+        motor_state.y = self.feedback1__/SPEED_RATIO
+        motor_state.z = self.pid1__.output
+        self.__diag_pub.publish(motor_state)        
 
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
