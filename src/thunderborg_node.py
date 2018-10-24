@@ -8,6 +8,7 @@ from geometry_msgs.msg import Twist
 from tacho_msgs.msg import tacho
 
 RATE = 10
+SPEED_RATIO = 1.47
 
 class ThunderBorgNode:
     def __init__(self):
@@ -51,28 +52,20 @@ class ThunderBorgNode:
         speed_wish_left = (msg.linear.x * 2) - speed_wish_right
 	
         # TODO This next bit is a start but we need the odometer feedback and a PID to get the output speed matching the demand speed
-        # wish_speed/1.27 (1.27 m/s) gives the Thunderborg motor value (OK for teleop)
-        #self.__thunderborg.SetMotor1(speed_wish_right/1.27)
-        #self.__thunderborg.SetMotor2(speed_wish_left/1.27)
+        # (OK for teleop)
+        #self.__thunderborg.SetMotor1(speed_wish_right/SPEED_RATIO)
+        #self.__thunderborg.SetMotor2(speed_wish_left/SPEED_RATIO)
         
         # Update any change to setpoint
         # TODO 1.27 should come from parameter server it is the actual top loaded speed. We limit our speed to 1m/s
-        self.pid1__.SetPoint = speed_wish_right/1.27
-        self.pid2__.SetPoint = speed_wish_left/1.27
+        self.pid1__.SetPoint = speed_wish_right/SPEED_RATIO
+        self.pid2__.SetPoint = speed_wish_left/SPEED_RATIO
 
     # Callback for tacho message
     def TachoCallback(self, msg):
-        # Store the feedback values for the next time we run the PIDs. Feedback does contain a sign so
-        # set the sign based on the direction that we last commanded the motors
-        if(self.motor1Speed__ < 0):
-            self.feedback1__ = -(msg.rwheelVel)
-        else:
-            self.feedback1__ = msg.rwheelVel
-            
-        if(self.motor2Speed__ < 0):
-            self.feedback2__ = -(msg.lwheelVel)
-        else:
-            self.feedback2__ = msg.lwheelVel
+        # Store the feedback values for the next time we run the PIDs
+        self.feedback1__ = msg.rwheelVel
+        self.feedback2__ = msg.lwheelVel
         
     # Publish the battery status    
     def PublishStatus(self):
@@ -83,19 +76,27 @@ class ThunderBorgNode:
 
     # Update the PIDs with the last feedback values and set the motor speeds
     def RunPID(self):
+        # Feedback does contain a sign so
+        # set the sign based on the direction that we last commanded the motors
+#        if(self.motor1Speed__ < 0):
+#            self.feedback1__ = -(self.feedback1__)            
+#        if(self.motor2Speed__ < 0):
+#            self.feedback2__ = -(self.feedback2__)
+
         # Update the PIDS
-        self.pid1__.update(self.feedback1__) 
-        self.pid2__.update(self.feedback2__)
+        self.pid1__.update(self.feedback1__/SPEED_RATIO) 
+        self.pid2__.update(self.feedback2__/SPEED_RATIO)
         
         # Use the current PID outputs to adjust the motor values
-        self.motor1Speed__ = self.pid1__.output
-        self.motor2Speed__ = self.pid2__.output       	
+        self.motor1Speed__ = self.pid1__.output        
+        self.motor2Speed__ = self.pid2__.output
+               	
         self.__thunderborg.SetMotor1(self.motor1Speed__)
         self.__thunderborg.SetMotor2(self.motor2Speed__)
         print(self.pid1__.SetPoint)
-	    print(self.feedback1__)	    
-	    print(self.pid1__.output) 
-	    print("---")
+        print(self.feedback1__/SPEED_RATIO)
+        print(self.pid1__.output)
+        print("---")
 
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
