@@ -2,7 +2,6 @@
 import sys
 import rospy
 import thunderborg_lib
-import pid_lib
 from sensor_msgs.msg import BatteryState
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Vector3   # Temp message for diagnostics
@@ -20,15 +19,6 @@ class ThunderBorgNode:
         else:
             # Setup board to turn off motors if we don't send a message every 1/4 second          
             self.__thunderborg.SetCommsFailsafe(True)
-
-        # Configure the PIDs
-        self.pid1__ = pid_lib.PID(0.8, 2.5, 0.0) # TODO P, I & D values to become parameters in the parameter server
-        self.pid1__.SetPoint = 0.0
-        self.pid1__.setSampleTime(0.25)
-
-        self.pid2__ = pid_lib.PID(0.8, 2.5, 0.0) # TODO P, I & D values to become parameters in the parameter server
-        self.pid2__.SetPoint = 0.0
-        self.pid2__.setSampleTime(0.25)
 
         # Motor velocity feedback values
         self.feedback1__ = 0.0
@@ -54,15 +44,12 @@ class ThunderBorgNode:
         speed_wish_right = ((msg.angular.z * WHEEL_DIST) / 2) + msg.linear.x
         speed_wish_left = (msg.linear.x * 2) - speed_wish_right
 	
-        # TODO This next bit is a start but we need the odometer feedback and a PID to get the output speed matching the demand speed
-        # (OK for teleop)
-        #self.__thunderborg.SetMotor1(speed_wish_right/SPEED_RATIO)
-        #self.__thunderborg.SetMotor2(speed_wish_left/SPEED_RATIO)
-        
-        # Update any change to setpoint
-        # TODO 1.27 should come from parameter server it is the actual top loaded speed. We limit our speed to 1m/s
-        self.pid1__.SetPoint = speed_wish_right/SPEED_RATIO
-        self.pid2__.SetPoint = speed_wish_left/SPEED_RATIO
+	    # Add in 1/2 the error
+	    motor_speed1 = speed_wish_right/SPEED_RATIO+((self.feedback1__/SPEED_RATIO)/2);
+	    motor_speed2 = speed_wish_left/SPEED_RATIO+((self.feedback2__/SPEED_RATIO)/2);
+	    
+        self.__thunderborg.SetMotor1(motor_speed1)
+        self.__thunderborg.SetMotor2(motor_speed2)        
 
     # Callback for tacho message
     def TachoCallback(self, msg):
@@ -75,39 +62,7 @@ class ThunderBorgNode:
         battery_state = BatteryState()
         # Read the battery voltage
         battery_state.voltage = self.__thunderborg.GetBatteryReading()        
-        self.__status_pub.publish(battery_state)       
-
-    # Update the PIDs with the last feedback values and set the motor speeds
-    def RunPID(self):
-        # Feedback does contain a sign so
-        # set the sign based on the direction that we last commanded the motors
-#        if(self.motor1Speed__ < 0):
-#            self.feedback1__ = -(self.feedback1__)            
-#        if(self.motor2Speed__ < 0):
-#            self.feedback2__ = -(self.feedback2__)
-
-        # Update the PIDS
-        self.pid1__.update(self.feedback1__/SPEED_RATIO)
-        self.pid2__.update(self.feedback2__/SPEED_RATIO)
-
-        # Use the current PID outputs to adjust the motor values
-        self.motor1Speed__ = self.pid1__.output
-        self.motor2Speed__ = self.pid2__.output
-
-        self.__thunderborg.SetMotor1(self.motor1Speed__)
-        self.__thunderborg.SetMotor2(self.motor2Speed__)
-        
-        pid_state = Vector3()
-        pid_state.x = self.pid1__.PTerm
-        pid_state.y = self.pid1__.ITerm
-        pid_state.z = self.pid1__.DTerm
-        self.__pid_pub.publish(pid_state)
-        
-        motor_state = Vector3()
-        motor_state.x = self.pid1__.SetPoint
-        motor_state.y = self.feedback1__/SPEED_RATIO
-        motor_state.z = self.pid1__.output
-        self.__diag_pub.publish(motor_state)        
+        self.__status_pub.publish(battery_state)              
 
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
@@ -121,10 +76,7 @@ def main(args):
     while not rospy.is_shutdown():
         if rospy.Time.now() > status_time:
             tbn.PublishStatus()
-            status_time = rospy.Time.now() + rospy.Duration(1)
-            
-        # Run the pid
-        tbn.RunPID()
+            status_time = rospy.Time.now() + rospy.Duration(1)            
             
         rate.sleep()
                
