@@ -33,8 +33,7 @@ class ThunderBorgNode:
         self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
                 
         # Publish topics
-        self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
-        self.__pid_pub = rospy.Publisher("PID", Vector3, queue_size=1)
+        self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)        
         self.__diag_pub = rospy.Publisher("DIAGNOSTICS", Vector3, queue_size=1)
 
     # Callback for cmd_vel message
@@ -44,12 +43,18 @@ class ThunderBorgNode:
         speed_wish_right = ((msg.angular.z * WHEEL_DIST) / 2) + msg.linear.x
         speed_wish_left = (msg.linear.x * 2) - speed_wish_right
 	
-	    # Add in 1/2 the error
-	    motor_speed1 = speed_wish_right/SPEED_RATIO+((self.feedback1__/SPEED_RATIO)/2);
-	    motor_speed2 = speed_wish_left/SPEED_RATIO+((self.feedback2__/SPEED_RATIO)/2);
+        # Add in 1/2 the error
+        motor_speed1 = speed_wish_right/SPEED_RATIO+((self.feedback1__/SPEED_RATIO)/2);
+        motor_speed2 = speed_wish_left/SPEED_RATIO+((self.feedback2__/SPEED_RATIO)/2);
 	    
         self.__thunderborg.SetMotor1(motor_speed1)
-        self.__thunderborg.SetMotor2(motor_speed2)        
+        self.__thunderborg.SetMotor2(motor_speed2)
+        
+        diagnostics = Vector3()
+        diagnostics.x = speed_wish_right/SPEED_RATIO
+        diagnostics.y = self.feedback1__/SPEED_RATIO
+        diagnostics.z = motor_speed1
+        self.__diag_pub.publish(diagnostics)
 
     # Callback for tacho message
     def TachoCallback(self, msg):
