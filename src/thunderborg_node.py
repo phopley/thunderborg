@@ -9,7 +9,8 @@ from geometry_msgs.msg import Vector3   # Temp message for diagnostics
 from tacho_msgs.msg import tacho
 
 RATE = 10
-SPEED_RATIO = 1.47
+#SPEED_RATIO = 1.47
+SPEED_RATIO = 1.32
 
 class ThunderBorgNode:
     def __init__(self):
@@ -33,6 +34,8 @@ class ThunderBorgNode:
         # Motor velocity feedback values
         self.feedback1__ = 0.0
         self.feedback2__ = 0.0
+        self.ignoredLast1__ = False
+        self.ignoredLast2__ = False
         
         # Current motor speeds
         self.motor1Speed__ = 0.0
@@ -67,8 +70,18 @@ class ThunderBorgNode:
     # Callback for tacho message
     def TachoCallback(self, msg):
         # Store the feedback values for the next time we run the PIDs
-        self.feedback1__ = msg.rwheelVel
-        self.feedback2__ = msg.lwheelVel
+        # Filter out any large changes
+        if (self.ignoredLast1__ == TRUE) or (abs(self.feedback1__ - msg.rwheelVel) < ((75.0/100.0) * self.feedback1__)):
+            self.feedback1__ = msg.rwheelVel
+            self.ignoredLast1__ = False
+        else:
+            self.ignoredLast1__ = True
+            
+        if (self.ignoredLast2__ == TRUE) or (abs(self.feedback2__ - msg.lwheelVel) < ((75.0/100.0) * self.feedback2__)):
+            self.feedback2__ = msg.lwheelVel
+            self.ignoredLast2__ = False
+        else:
+            self.ignoredLast2__ = True
         
     # Publish the battery status    
     def PublishStatus(self):
