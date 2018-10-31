@@ -40,23 +40,23 @@ class ThunderBorgNode:
         # Calculate the requested speed of each wheel
         speed_wish_right = ((msg.angular.z * WHEEL_DIST) / 2) + msg.linear.x
         speed_wish_left = (msg.linear.x * 2) - speed_wish_right
-	
-	    motor1_speed = speed_wish_right/SPEED_RATIO
-	    motor2_speed = speed_wish_left/SPEED_RATIO
+
+	motor1_speed = speed_wish_right/SPEED_RATIO
+	motor2_speed = speed_wish_left/SPEED_RATIO
         self.__thunderborg.SetMotor1(motor1_speed)
         self.__thunderborg.SetMotor2(motor2_speed)
-        
+
         motor1_state = Vector3()
-        motor1_state.x = self.speed_wish_right
-        motor1_state.y = self.feedback1
-        motor1_state.z = self.motor1_speed
+        motor1_state.x = speed_wish_right
+        motor1_state.y = self.feedback1__
+        motor1_state.z = motor1_speed
         motor2_state = Vector3()
-        motor2_state.x = self.speed_wish_left
-        motor2_state.y = self.feedback2
-        motor2_state.z = self.motor2_speed 
-               
+        motor2_state.x = speed_wish_left
+        motor2_state.y = self.feedback2__
+        motor2_state.z = motor2_speed
+
         self.__diag1_pub.publish(motor1_state)
-        self.__diag2_pub.publish(motor2_state)       
+        self.__diag2_pub.publish(motor2_state)
 
     # Callback for tacho message
     def TachoCallback(self, msg):
