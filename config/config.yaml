@@ -1,0 +1,12 @@
+pid:
+  use_pid: true
+  pid_values:
+    p: 0.9
+    i: 1.2
+    d: 1.5
+wheels:
+  distance: 0.23
+  circumfrence: 0.34
+# When using 10x1.2V batteries 1.47
+# When using test power supply 1.32
+speed_ratio : 1.47    

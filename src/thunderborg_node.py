@@ -2,7 +2,7 @@
 import sys
 import rospy
 import thunderborg_lib
-import pid_lib
+from simple_pid import PID
 from sensor_msgs.msg import BatteryState
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Vector3   # TODO Temp message for diagnostics
@@ -19,17 +19,22 @@ class ThunderBorgNode:
         self.__speed_ratio = rospy.get_param('speed_ratio', 1.47)
         
         if self.__use_pid == True:
-            p = rospy.get_param('/pid/p', 0.6)
+            p = rospy.get_param('/pid/p', 0.9)
             i = rospy.get_param('/pid/i', 1.2)
-            d = rospy.get_param('/pid/d', 0.0)
+            d = rospy.get_param('/pid/d', 1.5)
             # Configure the PIDs
-            self.__pid1 = pid_lib.PID(p, i, d)
-            self.__pid1.SetPoint = 0.0
-            self.__pid1.setSampleTime(0.050)
+            self.__pid1 = PID(p, i, d, setpoint=0)
+            self.__pid1.sample_time = 0.05
+            # Note that the PID will only deal in positive values, direction of motor
+            # will be set by the code writting to the Thunderborg.
+            # Limit the pid to the range from 0-1
+            self.__pid1.output_limits = (0, 1)
+            #self.__pid1.proportional_on_measurement = True
             
-            self.__pid2 = pid_lib.PID(p, i, d)
-            self.__pid2.SetPoint = 0.0
-            self.__pid2.setSampleTime(0.050)            
+            self.__pid2 = PID(p, i, d, setpoint=0)
+            self.__pid2.sample_time = 0.05
+            self.__pid2.output_limits = (0, 1)
+            #self.__pid2.proportional_on_measurement = True
         
         self.__thunderborg = thunderborg_lib.ThunderBorg()  # create the thunderborg object
         self.__thunderborg.Init()
@@ -39,13 +44,13 @@ class ThunderBorgNode:
             # Setup board to turn off motors if we don't send a message every 1/4 second          
             self.__thunderborg.SetCommsFailsafe(True)
 
-        # Motor velocity feedback values
+        # Motor velocity feedback values m/s
         self.__feedback_velocity1 = 0.0
         self.__feedback_velocity2 = 0.0
         
-        # Motor values
-        self.__motor1_speed = 0.0
-        self.__motor2_speed = 0.0
+        # Speed request in m/s
+        self.__speed_wish_right = 0.0
+        self.__speed_wish_left = 0.0
         
         # Publish topics
         self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
@@ -59,46 +64,43 @@ class ThunderBorgNode:
     # Callback for cmd_vel message
     def VelCallback(self, msg):       
         # Calculate the requested speed of each wheel
-        speed_wish_right = ((msg.angular.z * self.__wheel_distance) / 2) + msg.linear.x
-        speed_wish_left = (msg.linear.x * 2) - speed_wish_right
+        self.__speed_wish_right = ((msg.angular.z * self.__wheel_distance) / 2) + msg.linear.x
+        self.__speed_wish_left = (msg.linear.x * 2) - self.__speed_wish_right
 
         # Convert speed demands to values understood by the Thunderborg. We limit to 1m/s
-        self.__motor1_speed = speed_wish_right/self.__speed_ratio
-        self.__motor2_speed = speed_wish_left/self.__speed_ratio
+        motor1_speed = self.__speed_wish_right/self.__speed_ratio
+        motor2_speed = self.__speed_wish_left/self.__speed_ratio
         
         if self.__use_pid == True:
             # Using the PID so update set points
-            self.__pid1.SetPoint = self.__motor1_speed
-            self.__pid2.SetPoint = self.__motor2_speed
+            self.__pid1.setpoint = abs(motor1_speed)
+            self.__pid2.setpoint = abs(motor2_speed)
         else:
             # Update the Thunderborg directly
-            self.__thunderborg.SetMotor1(self.__motor1_speed)
-            self.__thunderborg.SetMotor2(self.__motor2_speed)
+            self.__thunderborg.SetMotor1(motor1_speed)
+            self.__thunderborg.SetMotor2(motor2_speed)
 
             # For debug only
             motor1_state = Vector3()
-            motor1_state.x = speed_wish_right
+            motor1_state.x = self.__speed_wish_right
             motor1_state.y = self.__feedback_velocity1
-            motor1_state.z = self.__motor1_speed
+            motor1_state.z = motor1_speed
             motor2_state = Vector3()
-            motor2_state.x = speed_wish_left
+            motor2_state.x = self.__speed_wish_left
             motor2_state.y = self.__feedback_velocity2
-            motor2_state.z = self.__motor2_speed
+            motor2_state.z = motor2_speed
             self.__diag1_pub.publish(motor1_state)
             self.__diag2_pub.publish(motor2_state)
 
     # Callback for tacho message
     def TachoCallback(self, msg):
-        # Store the feedback values as velocity m/s and add direction
-        if self.__motor1_speed < 0:
-            self.__feedback_velocity1 = -((msg.rwheelrpm/60.0)*self.__wheel_circumfrence)
-        else:
-            self.__feedback_velocity1 = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
+        # Store the feedback values as velocity m/s
+        self.__feedback_velocity1 = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
+        self.__feedback_velocity2 = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
         
-        if self.__motor2_speed < 0:
-            self.__feedback_velocity2 = -((msg.lwheelrpm/60.0)*self.__wheel_circumfrence)
-        else:
-            self.__feedback_velocity2 = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
+        # TODO for ODOM use
+        # self.__speed_wish_right sign to determine direction of feedback for 1
+        # self.__speed_wish_left sign to determine direction of feedback for 2
        
     # Publish the battery status    
     def PublishStatus(self):
@@ -113,26 +115,37 @@ class ThunderBorgNode:
     # Update the PIDs and set the motor speeds
     def RunPIDs(self):
         if self.__use_pid == True:
-            # Update PIDs
-            self.__pid1.update(self.__feedback_velocity1/self.__speed_ratio)
-            self.__pid2.update(self.__feedback_velocity2/self.__speed_ratio)
+            # Update PIDs and get next value
+            pid1_output = self.__pid1(self.__feedback_velocity1/self.__speed_ratio)
+            pid2_output = self.__pid2(self.__feedback_velocity2/self.__speed_ratio)
             
-            self.__motor1_speed = self.__pid1.output
-            self.__motor2_speed = self.__pid2.output
+            if self.__speed_wish_right < 0:
+                motor1_speed = -(pid1_output)
+            elif self.__speed_wish_right == 0:
+                motor1_speed = 0
+            else:
+                motor1_speed = pid1_output
+                
+            if self.__speed_wish_left < 0:    
+                motor2_speed = -(pid2_output)
+            elif self.__speed_wish_left == 0: 
+                motor2_speed = 0
+            else: 
+                motor2_speed = pid2_output
             
             # Set motor speeds
-            self.__thunderborg.SetMotor1(self.__motor1_speed)
-            self.__thunderborg.SetMotor2(self.__motor2_speed)
+            self.__thunderborg.SetMotor1(motor1_speed)
+            self.__thunderborg.SetMotor2(motor2_speed)
             
             # For debug only
             motor1_state = Vector3()
-            motor1_state.x = self.__pid1.SetPoint
+            motor1_state.x = self.__pid1.setpoint
             motor1_state.y = self.__feedback_velocity1/self.__speed_ratio
-            motor1_state.z = self.__motor1_speed
+            motor1_state.z = motor1_speed
             motor2_state = Vector3()
-            motor2_state.x = self.__pid1.SetPoint
-            motor2_state.y = self.__feedback_velocity1/self.__speed_ratio
-            motor2_state.z = self.__motor1_speed
+            motor2_state.x = self.__pid2.setpoint
+            motor2_state.y = self.__feedback_velocity2/self.__speed_ratio
+            motor2_state.z = motor2_speed
             self.__diag1_pub.publish(motor1_state)
             self.__diag2_pub.publish(motor2_state)
     
