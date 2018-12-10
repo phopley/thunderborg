@@ -2,17 +2,35 @@
 import sys
 import rospy
 import thunderborg_lib
+import pid_lib
 from sensor_msgs.msg import BatteryState
 from geometry_msgs.msg import Twist
-from geometry_msgs.msg import Vector3   # Temp message for diagnostics
+from geometry_msgs.msg import Vector3   # TODO Temp message for diagnostics
 from tacho_msgs.msg import tacho
 
 RATE = 10
-#SPEED_RATIO = 1.47 # Battery value
-SPEED_RATIO = 1.32 # Test power supply value
 
 class ThunderBorgNode:
     def __init__(self):
+        # Read values from parameter server
+        self.__use_pid = rospy.get_param('/pid/use_pid', False)
+        self.__wheel_distance = rospy.get_param('/wheels/distance', 0.23)
+        self.__wheel_circumfrence = rospy.get_param('/wheels/circumfrence', 0.34)
+        self.__speed_ratio = rospy.get_param('speed_ratio', 1.47)
+        
+        if self.__use_pid == True:
+            p = rospy.get_param('/pid/p', 0.6)
+            i = rospy.get_param('/pid/i', 1.2)
+            d = rospy.get_param('/pid/d', 0.0)
+            # Configure the PIDs
+            self.__pid1 = pid_lib.PID(p, i, d)
+            self.__pid1.SetPoint = 0.0
+            self.__pid1.setSampleTime(0.050)
+            
+            self.__pid2 = pid_lib.PID(p, i, d)
+            self.__pid2.SetPoint = 0.0
+            self.__pid2.setSampleTime(0.050)            
+        
         self.__thunderborg = thunderborg_lib.ThunderBorg()  # create the thunderborg object
         self.__thunderborg.Init()
         if not self.__thunderborg.foundChip:
@@ -22,56 +40,102 @@ class ThunderBorgNode:
             self.__thunderborg.SetCommsFailsafe(True)
 
         # Motor velocity feedback values
-        self.feedback1__ = 0.0
-        self.feedback2__ = 0.0
+        self.__feedback_velocity1 = 0.0
+        self.__feedback_velocity2 = 0.0
+        
+        # Motor values
+        self.__motor1_speed = 0.0
+        self.__motor2_speed = 0.0
+        
+        # Publish topics
+        self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
+        self.__diag1_pub = rospy.Publisher("motor1_diag", Vector3, queue_size=1) # TODO temp
+        self.__diag2_pub = rospy.Publisher("motor2_diag", Vector3, queue_size=1) # TODO temp
 
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
-        self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback) # Used for testing
-                
-        # Publish topics
-        self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
-        self.__diag1_pub = rospy.Publisher("motor1_diag", Vector3, queue_size=1)
-        self.__diag2_pub = rospy.Publisher("motor2_diag", Vector3, queue_size=1)
+        self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
 
     # Callback for cmd_vel message
-    def VelCallback(self, msg):
-        WHEEL_DIST = 0.230 # TODO this will become a parameter in the parameter server        
+    def VelCallback(self, msg):       
         # Calculate the requested speed of each wheel
-        speed_wish_right = ((msg.angular.z * WHEEL_DIST) / 2) + msg.linear.x
+        speed_wish_right = ((msg.angular.z * self.__wheel_distance) / 2) + msg.linear.x
         speed_wish_left = (msg.linear.x * 2) - speed_wish_right
 
-	motor1_speed = speed_wish_right/SPEED_RATIO
-	motor2_speed = speed_wish_left/SPEED_RATIO
-        self.__thunderborg.SetMotor1(motor1_speed)
-        self.__thunderborg.SetMotor2(motor2_speed)
+        # Convert speed demands to values understood by the Thunderborg. We limit to 1m/s
+        self.__motor1_speed = speed_wish_right/self.__speed_ratio
+        self.__motor2_speed = speed_wish_left/self.__speed_ratio
+        
+        if self.__use_pid == True:
+            # Using the PID so update set points
+            self.__pid1.SetPoint = self.__motor1_speed
+            self.__pid2.SetPoint = self.__motor2_speed
+        else:
+            # Update the Thunderborg directly
+            self.__thunderborg.SetMotor1(self.__motor1_speed)
+            self.__thunderborg.SetMotor2(self.__motor2_speed)
 
-        motor1_state = Vector3()
-        motor1_state.x = speed_wish_right
-        motor1_state.y = self.feedback1__
-        motor1_state.z = motor1_speed
-        motor2_state = Vector3()
-        motor2_state.x = speed_wish_left
-        motor2_state.y = self.feedback2__
-        motor2_state.z = motor2_speed
-
-        self.__diag1_pub.publish(motor1_state)
-        self.__diag2_pub.publish(motor2_state)
+            # For debug only
+            motor1_state = Vector3()
+            motor1_state.x = speed_wish_right
+            motor1_state.y = self.__feedback_velocity1
+            motor1_state.z = self.__motor1_speed
+            motor2_state = Vector3()
+            motor2_state.x = speed_wish_left
+            motor2_state.y = self.__feedback_velocity2
+            motor2_state.z = self.__motor2_speed
+            self.__diag1_pub.publish(motor1_state)
+            self.__diag2_pub.publish(motor2_state)
 
     # Callback for tacho message
     def TachoCallback(self, msg):
-        # Store the feedback values for the next time we publish current velocity
-        self.feedback1__ = msg.rwheelVel
-        self.feedback2__ = msg.lwheelVel
+        # Store the feedback values as velocity m/s and add direction
+        if self.__motor1_speed < 0:
+            self.__feedback_velocity1 = -((msg.rwheelrpm/60.0)*self.__wheel_circumfrence)
+        else:
+            self.__feedback_velocity1 = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
         
+        if self.__motor2_speed < 0:
+            self.__feedback_velocity2 = -((msg.lwheelrpm/60.0)*self.__wheel_circumfrence)
+        else:
+            self.__feedback_velocity2 = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
+       
     # Publish the battery status    
     def PublishStatus(self):
         battery_state = BatteryState()
         # Read the battery voltage
-        battery_state.voltage = self.__thunderborg.GetBatteryReading()        
-        self.__status_pub.publish(battery_state)       
-        
+        try:
+            battery_state.voltage = self.__thunderborg.GetBatteryReading()        
+            self.__status_pub.publish(battery_state)
+        except:
+            rospy.logwarn("Thunderborg node: Failed to read battery voltage");
 
+    # Update the PIDs and set the motor speeds
+    def RunPIDs(self):
+        if self.__use_pid == True:
+            # Update PIDs
+            self.__pid1.update(self.__feedback_velocity1/self.__speed_ratio)
+            self.__pid2.update(self.__feedback_velocity2/self.__speed_ratio)
+            
+            self.__motor1_speed = self.__pid1.output
+            self.__motor2_speed = self.__pid2.output
+            
+            # Set motor speeds
+            self.__thunderborg.SetMotor1(self.__motor1_speed)
+            self.__thunderborg.SetMotor2(self.__motor2_speed)
+            
+            # For debug only
+            motor1_state = Vector3()
+            motor1_state.x = self.__pid1.SetPoint
+            motor1_state.y = self.__feedback_velocity1/self.__speed_ratio
+            motor1_state.z = self.__motor1_speed
+            motor2_state = Vector3()
+            motor2_state.x = self.__pid1.SetPoint
+            motor2_state.y = self.__feedback_velocity1/self.__speed_ratio
+            motor2_state.z = self.__motor1_speed
+            self.__diag1_pub.publish(motor1_state)
+            self.__diag2_pub.publish(motor2_state)
+    
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
     rospy.loginfo("Thunderborg node started")
@@ -86,6 +150,9 @@ def main(args):
             tbn.PublishStatus()
             status_time = rospy.Time.now() + rospy.Duration(1)
             
+        # Run the PIDs
+        tbn.RunPIDs()
+        
         rate.sleep()
                
 
