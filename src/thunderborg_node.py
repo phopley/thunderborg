@@ -24,19 +24,18 @@ class ThunderBorgNode:
         self.__diag_msgs = rospy.get_param('/speed/motor_diag_msg', False)
         
         if self.__use_pid == True:
-            # Configure the PIDs
-            self.__pid1 = PID(0.6, 0.7, 0.7, setpoint=0)
+            # Configure the PIDs. Dummy values of zero, the actual values we be set when
+            # we start the dynamic reconfiguration server below.
+            self.__pid1 = PID(0.0, 0.0, 0.0, setpoint=0)
             self.__pid1.sample_time = 0.05
             # Note that the PID will only deal in positive values, direction of motor
             # will be set by the code writting to the Thunderborg.
             # Limit the pid range
             self.__pid1.output_limits = (self.__inertia, 1.0)
-            #self.__pid1.proportional_on_measurement = True
             
-            self.__pid2 = PID(0.6, 0.7, 0.7, setpoint=0)
+            self.__pid2 = PID(0.0, 0.0, 0.0, setpoint=0)
             self.__pid2.sample_time = 0.05
             self.__pid2.output_limits = (self.__inertia, 1.0)
-            #self.__pid2.proportional_on_measurement = True
             
             # We call dynamic server here after the PIDs are set up
             # so the new PID values are set after the PIDs were created
@@ -79,7 +78,7 @@ class ThunderBorgNode:
         if vel == 0:
             setting = 0
         else:
-            setting = (abs(vel)+self.__speed_y_intercept)/self.__speed_slope
+            setting = (abs(vel)-self.__speed_y_intercept)/self.__speed_slope
             if vel < 0:
                 setting = -(setting)
         return setting

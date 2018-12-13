@@ -6,6 +6,6 @@ wheels:
   circumfrence: 0.34
 speed:
   # Plot x=thunderborg value, y=m/s
-  slope: 1.5
-  y_intercept: 0.4
+  slope: 1.310714
+  y_intercept: -0.3403571
   motor_diag_msg: true
