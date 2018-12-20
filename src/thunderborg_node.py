@@ -2,13 +2,16 @@
 import sys
 import rospy
 import thunderborg_lib
+import tf
 from simple_pid import PID  # See https://pypi.org/project/simple-pid
 from sensor_msgs.msg import BatteryState
-from geometry_msgs.msg import Twist
-from geometry_msgs.msg import Vector3
-from tacho_msgs.msg import tacho
+from geometry_msgs.msg import Twist, Vector3, Point, Pose, Quaternion
+from nav_msgs.msg import Odometry
 from dynamic_reconfigure.server import Server
+from tf.transformations import quaternion_from_euler
+from tacho_msgs.msg import tacho
 from thunderborg.cfg import ThunderborgConfig
+from math import cos, sin
 
 RATE = 10
 
@@ -59,6 +62,7 @@ class ThunderBorgNode:
         
         # Publish topics
         self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
+        self.__odom_pub = rospy.Publisher("odom", Odometry, queue_size=50)
         if self.__diag_msgs == True:
             self.__diag1_pub = rospy.Publisher("motor1_diag", Vector3, queue_size=1)
             self.__diag2_pub = rospy.Publisher("motor2_diag", Vector3, queue_size=1)
@@ -66,6 +70,15 @@ class ThunderBorgNode:
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
         self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
+
+        # Setup tf broadcaster
+        self.__odom_broadcaster = tf.TransformBroadcaster()
+
+        # ODOM values
+        self.__odom_x = 0.0
+        self.__odom_y = 0.0
+        self.__odom_th = 0.0
+        self.__last_odom_time = rospy.Time.now()
 
     # Dynamic recofiguration of the PIDS
     def DynamicCallbak(self, config, level):
@@ -85,7 +98,9 @@ class ThunderBorgNode:
         
     # Callback for cmd_vel message
     def VelCallback(self, msg):       
-        # Calculate the requested speed of each wheel
+        # Calculate the requested speed of each wheel.
+        # This will give us the required robot rotation, 
+        # linear x will become the average speed of the two motors.
         self.__speed_wish_right = ((msg.angular.z * self.__wheel_distance) / 2) + msg.linear.x
         self.__speed_wish_left = (msg.linear.x * 2) - self.__speed_wish_right
 
@@ -119,10 +134,6 @@ class ThunderBorgNode:
         # Store the feedback values as velocity m/s
         self.__feedback_velocity1 = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
         self.__feedback_velocity2 = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
-        
-        # TODO for ODOM use
-        # self.__speed_wish_right sign to determine direction of feedback for 1
-        # self.__speed_wish_left sign to determine direction of feedback for 2
        
     # Publish the battery status    
     def PublishStatus(self):
@@ -174,7 +185,66 @@ class ThunderBorgNode:
                 motor2_state.z = motor2_speed
                 self.__diag1_pub.publish(motor1_state)
                 self.__diag2_pub.publish(motor2_state)
-    
+
+    # the navigation stack requires that the odometry source publishes both a 
+    # transform and a nav/msgs/Odometry message.
+    def PublishOdom(self):
+        # From the right and left wheel velocities calculate the robot angular velocity
+        # First get motor velocities with correct signs
+        if self.__speed_wish_right < 0:
+            motor_right_velocity = -(self.__feedback_velocity1)
+        else:
+            motor_right_velocity = self.__feedback_velocity1
+
+        if self.__speed_wish_left < 0:
+            motor_left_velocity = -(self.__feedback_velocity2)
+        else:
+            motor_left_velocity = self.__feedback_velocity2
+
+        forward_velocity = (motor_left_velocity + motor_right_velocity)/2
+        angular_velocity = 2*(motor_right_velocity - forward_velocity)/self.__wheel_distance
+
+        velocity_x = forward_velocity * cos(angular_velocity)
+        velocity_y = forward_velocity * sin(angular_velocity)
+
+        # Compute odometry from the calculate velocities
+        current_time = rospy.Time.now()
+        delta_time = (current_time - self.__last_odom_time).to_sec()    # Floating point seconds
+        delta_x = (velocity_x * cos(angular_velocity) - velocity_y * sin(angular_velocity)) * delta_time
+        delta_y = (velocity_x * sin(angular_velocity) + velocity_y * cos(angular_velocity)) * delta_time
+        delta_th = angular_velocity * delta_time
+
+        # Add the latest calculated movement
+        self.__odom_x += delta_x 
+        self.__odom_y += delta_y
+        self.__odom_th += delta_th
+
+        # we need Yaw in a Quaternion
+        odom_quat = quaternion_from_euler(0, 0, self.__odom_th)
+
+        # Send the transform
+        self.__odom_broadcaster.sendTransform((self.__odom_x, self.__odom_y, 0.0),
+                                              odom_quat,
+                                              current_time,
+                                              'base_link',
+                                              'odom')
+
+        # Next publish the odometry message over ROS
+        odom = Odometry()
+        odom.header.stamp = current_time
+        odom.header.frame_id = 'odom'
+        # The pose
+        odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, 0.), Quaternion(*odom_quat)) 
+        # The velocity
+        odom.child_frame_id = 'base_link'
+        odom.twist.twist = Twist(Vector3(velocity_x, velocity_y, 0), Vector3(0, 0, angular_velocity))
+        
+        # Publish the message
+        self.__odom_pub.publish(odom)
+
+        self.__last_odom_time = current_time
+
+
 def main(args):
     rospy.init_node('thunderborg_node', anonymous=False)
     rospy.loginfo("Thunderborg node started")
@@ -185,10 +255,14 @@ def main(args):
     status_time = rospy.Time.now()
     
     while not rospy.is_shutdown():
+        
         if rospy.Time.now() > status_time:
             tbn.PublishStatus()
             status_time = rospy.Time.now() + rospy.Duration(1)
-            
+
+        # Publish ODOM data
+        tbn.PublishOdom()
+          
         # Run the PIDs
         tbn.RunPIDs()
         
