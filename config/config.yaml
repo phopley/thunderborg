@@ -1,5 +1,5 @@
 pid:
-  use_pid: true
+  use_pid: false
   inertia_level: 0.3
 wheels:
   distance: 0.23

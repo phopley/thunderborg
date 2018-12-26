@@ -9,11 +9,12 @@ from geometry_msgs.msg import Twist, Vector3, Point, Pose, Quaternion
 from nav_msgs.msg import Odometry
 from dynamic_reconfigure.server import Server
 from tf.transformations import quaternion_from_euler
+from std_msgs.msg import Empty
 from tacho_msgs.msg import tacho
 from thunderborg.cfg import ThunderborgConfig
 from math import cos, sin
 
-RATE = 10
+RATE = 20
 
 class ThunderBorgNode:
     def __init__(self):
@@ -59,6 +60,10 @@ class ThunderBorgNode:
         # Speed request in m/s
         self.__speed_wish_right = 0.0
         self.__speed_wish_left = 0.0
+
+        # Current motor direction: negative = reverse, 0.0 = stopped, positive forward
+        self.__motor_r_direction = motor1_speed = 0.0
+        self.__motor_l_direction = motor2_speed = 0.0
         
         # Publish topics
         self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
@@ -70,6 +75,7 @@ class ThunderBorgNode:
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
         self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
+        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_odomeetry", Empty, self.ResertCallback)
 
         # Setup tf broadcaster
         self.__odom_broadcaster = tf.TransformBroadcaster()
@@ -117,6 +123,9 @@ class ThunderBorgNode:
             self.__thunderborg.SetMotor1(motor1_speed)
             self.__thunderborg.SetMotor2(motor2_speed)
 
+            self.__motor_r_direction = motor1_speed = motor1_speed
+            self.__motor_l_direction = motor2_speed = motor2_speed
+
             if self.__diag_msgs == True:
                 motor1_state = Vector3()
                 motor1_state.x = self.__speed_wish_right
@@ -134,6 +143,12 @@ class ThunderBorgNode:
         # Store the feedback values as velocity m/s
         self.__feedback_velocity1 = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
         self.__feedback_velocity2 = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
+
+    # Callback for odometry reset command
+    def ResertCallback(self, msg):
+        self.__odom_x = 0.0
+        self.__odom_y = 0.0
+        self.__odom_th = 0.0
        
     # Publish the battery status    
     def PublishStatus(self):
@@ -143,7 +158,7 @@ class ThunderBorgNode:
             battery_state.voltage = self.__thunderborg.GetBatteryReading()        
             self.__status_pub.publish(battery_state)
         except:
-            rospy.logwarn("Thunderborg node: Failed to read battery voltage");
+            rospy.logwarn("Thunderborg node: Failed to read battery voltage");        
 
     # Update the PIDs and set the motor speeds
     def RunPIDs(self):
@@ -158,14 +173,14 @@ class ThunderBorgNode:
             if self.__pid1.setpoint < self.__inertia:
                 motor1_speed = 0    
             # else check direction required
-            elif self.__speed_wish_right < 0:
+            elif self.__speed_wish_right < .0:
                 motor1_speed = -(pid1_output)
             else:
                 motor1_speed = pid1_output
             
             if self.__pid2.setpoint < self.__inertia:
                 motor2_speed = 0
-            elif self.__speed_wish_left < 0:    
+            elif self.__speed_wish_left < .0:    
                 motor2_speed = -(pid2_output)
             else: 
                 motor2_speed = pid2_output
@@ -173,6 +188,9 @@ class ThunderBorgNode:
             # Set motor speeds
             self.__thunderborg.SetMotor1(motor1_speed)
             self.__thunderborg.SetMotor2(motor2_speed)
+
+            self.__motor_r_direction = motor1_speed = motor1_speed
+            self.__motor_l_direction = motor2_speed = motor2_speed
             
             if self.__diag_msgs == True:
                 motor1_state = Vector3()
@@ -189,29 +207,34 @@ class ThunderBorgNode:
     # the navigation stack requires that the odometry source publishes both a 
     # transform and a nav/msgs/Odometry message.
     def PublishOdom(self):
-        # From the right and left wheel velocities calculate the robot angular velocity
+        # From the right and left wheel velocities calculate the robot velocities
         # First get motor velocities with correct signs
-        if self.__speed_wish_right < 0:
+        if self.__motor_r_direction < 0:
             motor_right_velocity = -(self.__feedback_velocity1)
+        elif self.__motor_r_direction == .0:
+            motor_right_velocity = .0
         else:
             motor_right_velocity = self.__feedback_velocity1
 
-        if self.__speed_wish_left < 0:
+        if self.__motor_l_direction < 0:
             motor_left_velocity = -(self.__feedback_velocity2)
+        elif self.__motor_l_direction == .0:
+            motor_left_velocity = .0
         else:
             motor_left_velocity = self.__feedback_velocity2
 
         forward_velocity = (motor_left_velocity + motor_right_velocity)/2
         angular_velocity = 2*(motor_right_velocity - forward_velocity)/self.__wheel_distance
 
+        # Now the x and y velocities
         velocity_x = forward_velocity * cos(angular_velocity)
         velocity_y = forward_velocity * sin(angular_velocity)
 
         # Compute odometry from the calculate velocities
         current_time = rospy.Time.now()
         delta_time = (current_time - self.__last_odom_time).to_sec()    # Floating point seconds
-        delta_x = (velocity_x * cos(angular_velocity) - velocity_y * sin(angular_velocity)) * delta_time
-        delta_y = (velocity_x * sin(angular_velocity) + velocity_y * cos(angular_velocity)) * delta_time
+        delta_x = (velocity_x * cos(self.__odom_th) - velocity_y * sin(self.__odom_th)) * delta_time
+        delta_y = (velocity_x * sin(self.__odom_th) + velocity_y * cos(self.__odom_th)) * delta_time
         delta_th = angular_velocity * delta_time
 
         # Add the latest calculated movement
@@ -233,9 +256,9 @@ class ThunderBorgNode:
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = 'odom'
-        # The pose
+        # The pose is specified to the odom co-ordinate frame
         odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, 0.), Quaternion(*odom_quat)) 
-        # The velocity
+        # The Twist velocities is specified to the base_link co-ordinate frame
         odom.child_frame_id = 'base_link'
         odom.twist.twist = Twist(Vector3(velocity_x, velocity_y, 0), Vector3(0, 0, angular_velocity))
         
