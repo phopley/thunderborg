@@ -5,7 +5,7 @@ import thunderborg_lib
 import tf
 from simple_pid import PID  # See https://pypi.org/project/simple-pid
 from sensor_msgs.msg import BatteryState
-from geometry_msgs.msg import Twist, Vector3, Point, Pose, Quaternion
+from geometry_msgs.msg import Vector3,Twist, Point, Pose, Quaternion
 from nav_msgs.msg import Odometry
 from dynamic_reconfigure.server import Server
 from tf.transformations import quaternion_from_euler
@@ -54,16 +54,12 @@ class ThunderBorgNode:
             self.__thunderborg.SetCommsFailsafe(True)
 
         # Motor velocity feedback values m/s
-        self.__feedback_velocity1 = 0.0
-        self.__feedback_velocity2 = 0.0
+        self.__feedback_velocity_right = 0.0
+        self.__feedback_velocity_left = 0.0
         
         # Speed request in m/s
         self.__speed_wish_right = 0.0
         self.__speed_wish_left = 0.0
-
-        # Current motor direction: negative = reverse, 0.0 = stopped, positive forward
-        self.__motor_r_direction = motor1_speed = 0.0
-        self.__motor_l_direction = motor2_speed = 0.0
         
         # Publish topics
         self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
@@ -71,11 +67,6 @@ class ThunderBorgNode:
         if self.__diag_msgs == True:
             self.__diag1_pub = rospy.Publisher("motor1_diag", Vector3, queue_size=1)
             self.__diag2_pub = rospy.Publisher("motor2_diag", Vector3, queue_size=1)
-
-        # Subscribe to topics
-        self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
-        self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
-        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_odomeetry", Empty, self.ResertCallback)
 
         # Setup tf broadcaster
         self.__odom_broadcaster = tf.TransformBroadcaster()
@@ -85,6 +76,11 @@ class ThunderBorgNode:
         self.__odom_y = 0.0
         self.__odom_th = 0.0
         self.__last_odom_time = rospy.Time.now()
+
+        # Subscribe to topics
+        self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
+        self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
+        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_odometry", Empty, self.ResertCallback)
 
     # Dynamic recofiguration of the PIDS
     def DynamicCallbak(self, config, level):
@@ -104,9 +100,7 @@ class ThunderBorgNode:
         
     # Callback for cmd_vel message
     def VelCallback(self, msg):       
-        # Calculate the requested speed of each wheel.
-        # This will give us the required robot rotation, 
-        # linear x will become the average speed of the two motors.
+        # Calculate the requested speed of each wheel
         self.__speed_wish_right = ((msg.angular.z * self.__wheel_distance) / 2) + msg.linear.x
         self.__speed_wish_left = (msg.linear.x * 2) - self.__speed_wish_right
 
@@ -123,17 +117,14 @@ class ThunderBorgNode:
             self.__thunderborg.SetMotor1(motor1_speed)
             self.__thunderborg.SetMotor2(motor2_speed)
 
-            self.__motor_r_direction = motor1_speed = motor1_speed
-            self.__motor_l_direction = motor2_speed = motor2_speed
-
             if self.__diag_msgs == True:
                 motor1_state = Vector3()
                 motor1_state.x = self.__speed_wish_right
-                motor1_state.y = self.__feedback_velocity1
+                motor1_state.y = self.__feedback_velocity_right
                 motor1_state.z = motor1_speed
                 motor2_state = Vector3()
                 motor2_state.x = self.__speed_wish_left
-                motor2_state.y = self.__feedback_velocity2
+                motor2_state.y = self.__feedback_velocity_left
                 motor2_state.z = motor2_speed
                 self.__diag1_pub.publish(motor1_state)
                 self.__diag2_pub.publish(motor2_state)
@@ -141,8 +132,8 @@ class ThunderBorgNode:
     # Callback for tacho message
     def TachoCallback(self, msg):
         # Store the feedback values as velocity m/s
-        self.__feedback_velocity1 = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
-        self.__feedback_velocity2 = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
+        self.__feedback_velocity_right = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
+        self.__feedback_velocity_left = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
 
     # Callback for odometry reset command
     def ResertCallback(self, msg):
@@ -163,9 +154,9 @@ class ThunderBorgNode:
     # Update the PIDs and set the motor speeds
     def RunPIDs(self):
         if self.__use_pid == True:
-            # Update PIDs and get next value
-            pid1_output = self.__pid1(self.MotorSetting(self.__feedback_velocity1))
-            pid2_output = self.__pid2(self.MotorSetting(self.__feedback_velocity2))
+            # Update PIDs and get next value. Remember PID values are always positive
+            pid1_output = self.__pid1(self.MotorSetting(abs(self.__feedback_velocity_right)))
+            pid2_output = self.__pid2(self.MotorSetting(abs(self.__feedback_velocity_left)))
             
             # Check if demand is below inertia level. The pid lower level is set to this value
             # to stop the pid going below this level when responding to an overshoot and causing
@@ -188,18 +179,15 @@ class ThunderBorgNode:
             # Set motor speeds
             self.__thunderborg.SetMotor1(motor1_speed)
             self.__thunderborg.SetMotor2(motor2_speed)
-
-            self.__motor_r_direction = motor1_speed = motor1_speed
-            self.__motor_l_direction = motor2_speed = motor2_speed
             
             if self.__diag_msgs == True:
                 motor1_state = Vector3()
                 motor1_state.x = self.__pid1.setpoint
-                motor1_state.y = self.MotorSetting(self.__feedback_velocity1)
+                motor1_state.y = self.MotorSetting(self.__feedback_velocity_right)
                 motor1_state.z = motor1_speed
                 motor2_state = Vector3()
                 motor2_state.x = self.__pid2.setpoint
-                motor2_state.y = self.MotorSetting(self.__feedback_velocity2)
+                motor2_state.y = self.MotorSetting(self.__feedback_velocity_left)
                 motor2_state.z = motor2_speed
                 self.__diag1_pub.publish(motor1_state)
                 self.__diag2_pub.publish(motor2_state)
@@ -207,24 +195,8 @@ class ThunderBorgNode:
     # the navigation stack requires that the odometry source publishes both a 
     # transform and a nav/msgs/Odometry message.
     def PublishOdom(self):
-        # From the right and left wheel velocities calculate the robot velocities
-        # First get motor velocities with correct signs
-        if self.__motor_r_direction < 0:
-            motor_right_velocity = -(self.__feedback_velocity1)
-        elif self.__motor_r_direction == .0:
-            motor_right_velocity = .0
-        else:
-            motor_right_velocity = self.__feedback_velocity1
-
-        if self.__motor_l_direction < 0:
-            motor_left_velocity = -(self.__feedback_velocity2)
-        elif self.__motor_l_direction == .0:
-            motor_left_velocity = .0
-        else:
-            motor_left_velocity = self.__feedback_velocity2
-
-        forward_velocity = (motor_left_velocity + motor_right_velocity)/2
-        angular_velocity = 2*(motor_right_velocity - forward_velocity)/self.__wheel_distance
+        forward_velocity = (self.__feedback_velocity_left + self.__feedback_velocity_right)/2
+        angular_velocity = 2*(self.__feedback_velocity_right - forward_velocity)/self.__wheel_distance
 
         # Now the x and y velocities
         velocity_x = forward_velocity * cos(angular_velocity)
