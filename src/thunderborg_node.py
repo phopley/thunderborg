@@ -5,7 +5,7 @@ import thunderborg_lib
 import tf
 from simple_pid import PID  # See https://pypi.org/project/simple-pid
 from sensor_msgs.msg import BatteryState
-from geometry_msgs.msg import Vector3,Twist, Point, Pose, Quaternion
+from geometry_msgs.msg import Vector3, Twist, Point, Pose, Quaternion
 from nav_msgs.msg import Odometry
 from dynamic_reconfigure.server import Server
 from tf.transformations import quaternion_from_euler
@@ -24,7 +24,7 @@ class ThunderBorgNode:
         self.__wheel_circumfrence = rospy.get_param('/wheels/circumfrence', 0.34)
         self.__speed_slope = rospy.get_param('/speed/slope', 1.5)
         self.__speed_y_intercept = rospy.get_param('/speed/y_intercept', 0.4)
-        self.__inertia = rospy.get_param('/pid/inertia_level', 0.3)
+        self.__inertia = rospy.get_param('/pid/inertia_level', 0.0)
         self.__diag_msgs = rospy.get_param('/speed/motor_diag_msg', False)
         
         if self.__use_pid == True:
@@ -32,9 +32,7 @@ class ThunderBorgNode:
             # we start the dynamic reconfiguration server below.
             self.__pid1 = PID(0.0, 0.0, 0.0, setpoint=0)
             self.__pid1.sample_time = 0.05
-            # Note that the PID will only deal in positive values, direction of motor
-            # will be set by the code writting to the Thunderborg.
-            # Limit the pid range
+            # Limit the pid range. The PID will only work in positive values
             self.__pid1.output_limits = (self.__inertia, 1.0)
             
             self.__pid2 = PID(0.0, 0.0, 0.0, setpoint=0)
@@ -56,6 +54,10 @@ class ThunderBorgNode:
         # Motor velocity feedback values m/s
         self.__feedback_velocity_right = 0.0
         self.__feedback_velocity_left = 0.0
+        
+        # Last motor direction
+        self.__fwd_right = True
+        self.__fwd_left = True
         
         # Speed request in m/s
         self.__speed_wish_right = 0.0
@@ -80,7 +82,7 @@ class ThunderBorgNode:
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
         self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
-        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_odometry", Empty, self.ResertCallback)
+        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_odometry", Empty, self.ResetCallback)
 
     # Dynamic recofiguration of the PIDS
     def DynamicCallbak(self, config, level):
@@ -90,11 +92,11 @@ class ThunderBorgNode:
         
     # Function to calculate thunderborg setting from velocity
     def MotorSetting(self, vel):
-        if vel == 0:
-            setting = 0
+        if vel == 0.0:
+            setting = 0.0
         else:
             setting = (abs(vel)-self.__speed_y_intercept)/self.__speed_slope
-            if vel < 0:
+            if vel < 0.0:
                 setting = -(setting)
         return setting
         
@@ -104,28 +106,45 @@ class ThunderBorgNode:
         self.__speed_wish_right = ((msg.angular.z * self.__wheel_distance) / 2) + msg.linear.x
         self.__speed_wish_left = (msg.linear.x * 2) - self.__speed_wish_right
 
-        # Convert speed demands to values understood by the Thunderborg. We limit to 1m/s
-        motor1_speed = self.MotorSetting(self.__speed_wish_right)
-        motor2_speed = self.MotorSetting(self.__speed_wish_left)
+        # Convert speed demands to values understood by the Thunderborg.
+        motor1_value = self.MotorSetting(self.__speed_wish_right)
+        motor2_value = self.MotorSetting(self.__speed_wish_left)
         
         if self.__use_pid == True:
             # Using the PID so update set points
-            self.__pid1.setpoint = abs(motor1_speed)
-            self.__pid2.setpoint = abs(motor2_speed)
+            self.__pid1.setpoint = abs(motor1_value)
+            self.__pid2.setpoint = abs(motor2_value)
+            
+            if motor1_value == 0.0:
+                # Leave flag as is
+                pass                            
+            elif motor1_value < 0.0:
+                self.__fwd_right = False
+            else:
+                self.__fwd_right = True
+
+            if motor2_value == 0.0:
+                # Leave flag as is
+                pass                            
+            elif motor2_value < 0.0:
+                self.__fwd_left = False
+            else:
+                self.__fwd_left = True
+            
         else:
-            # Update the Thunderborg directly
-            self.__thunderborg.SetMotor1(motor1_speed)
-            self.__thunderborg.SetMotor2(motor2_speed)
+            # Update the Thunderborg directly   
+            self.__thunderborg.SetMotor1(motor1_value)
+            self.__thunderborg.SetMotor2(motor2_value)
 
             if self.__diag_msgs == True:
                 motor1_state = Vector3()
                 motor1_state.x = self.__speed_wish_right
                 motor1_state.y = self.__feedback_velocity_right
-                motor1_state.z = motor1_speed
+                motor1_state.z = motor1_value
                 motor2_state = Vector3()
                 motor2_state.x = self.__speed_wish_left
                 motor2_state.y = self.__feedback_velocity_left
-                motor2_state.z = motor2_speed
+                motor2_state.z = motor2_value
                 self.__diag1_pub.publish(motor1_state)
                 self.__diag2_pub.publish(motor2_state)
 
@@ -136,7 +155,7 @@ class ThunderBorgNode:
         self.__feedback_velocity_left = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
 
     # Callback for odometry reset command
-    def ResertCallback(self, msg):
+    def ResetCallback(self, msg):
         self.__odom_x = 0.0
         self.__odom_y = 0.0
         self.__odom_th = 0.0
@@ -154,41 +173,44 @@ class ThunderBorgNode:
     # Update the PIDs and set the motor speeds
     def RunPIDs(self):
         if self.__use_pid == True:
-            # Update PIDs and get next value. Remember PID values are always positive
-            pid1_output = self.__pid1(self.MotorSetting(abs(self.__feedback_velocity_right)))
-            pid2_output = self.__pid2(self.MotorSetting(abs(self.__feedback_velocity_left)))
+            # Update PIDs and get next value.
+            if abs(self.__feedback_velocity_right) <= self.__inertia:
+                pid1_output = self.__pid1(self.__inertia)
+            else:
+                pid1_output = self.__pid1(self.MotorSetting(abs(self.__feedback_velocity_right)))
+
+            if abs(self.__feedback_velocity_left) <= self.__inertia:
+                pid2_output = self.__pid2(self.__inertia)
+            else:                
+                pid2_output = self.__pid2(self.MotorSetting(abs(self.__feedback_velocity_left)))            
             
-            # Check if demand is below inertia level. The pid lower level is set to this value
-            # to stop the pid going below this level when responding to an overshoot and causing
-            # a motor stall
-            if self.__pid1.setpoint < self.__inertia:
-                motor1_speed = 0    
-            # else check direction required
-            elif self.__speed_wish_right < .0:
+            if pid1_output <= self.__inertia:
+                motor1_speed = 0.0
+            elif self.__fwd_right == False:
                 motor1_speed = -(pid1_output)
             else:
                 motor1_speed = pid1_output
-            
-            if self.__pid2.setpoint < self.__inertia:
-                motor2_speed = 0
-            elif self.__speed_wish_left < .0:    
+
+            if pid2_output <= self.__inertia:
+                motor2_speed = 0.0                
+            elif self.__fwd_left == False:
                 motor2_speed = -(pid2_output)
-            else: 
-                motor2_speed = pid2_output
+            else:
+                motor2_speed = pid2_output                
             
-            # Set motor speeds
+            # Set motor value
             self.__thunderborg.SetMotor1(motor1_speed)
             self.__thunderborg.SetMotor2(motor2_speed)
             
             if self.__diag_msgs == True:
                 motor1_state = Vector3()
                 motor1_state.x = self.__pid1.setpoint
-                motor1_state.y = self.MotorSetting(self.__feedback_velocity_right)
-                motor1_state.z = motor1_speed
+                motor1_state.y = pid1_output
+                motor1_state.z = self.__feedback_velocity_right
                 motor2_state = Vector3()
                 motor2_state.x = self.__pid2.setpoint
-                motor2_state.y = self.MotorSetting(self.__feedback_velocity_left)
-                motor2_state.z = motor2_speed
+                motor2_state.y = pid2_output
+                motor2_state.z = self.__feedback_velocity_left
                 self.__diag1_pub.publish(motor1_state)
                 self.__diag2_pub.publish(motor2_state)
 
