@@ -1,11 +1,11 @@
 pid:
-  use_pid: false
-  inertia_level: 0.3
+  use_pid: true
+  inertia_level: 0.1
 wheels:
-  distance: 0.23
-  circumfrence: 0.34
+  distance: 0.24
+  circumfrence: 0.32
 speed:
   # Plot x=thunderborg value, y=m/s
-  slope: 1.310714
-  y_intercept: -0.3403571
+  slope: 0.649776
+  y_intercept: -0.0788956
   motor_diag_msg: false
