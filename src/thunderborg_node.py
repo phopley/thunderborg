@@ -21,7 +21,7 @@ class ThunderBorgNode:
         # Read values from parameter server
         self.__use_pid = rospy.get_param('/pid/use_pid', False)
         self.__wheel_distance = rospy.get_param('/wheels/distance', 0.23)
-        self.__wheel_circumfrence = rospy.get_param('/wheels/circumfrence', 0.34)
+        self.__wheel_circumference = rospy.get_param('/wheels/circumference', 0.34)
         self.__speed_slope = rospy.get_param('/speed/slope', 1.5)
         self.__speed_y_intercept = rospy.get_param('/speed/y_intercept', 0.4)
         self.__inertia = rospy.get_param('/pid/inertia_level', 0.0)
@@ -41,7 +41,7 @@ class ThunderBorgNode:
             
             # We call dynamic server here after the PIDs are set up
             # so the new PID values are set after the PIDs were created
-            srv = Server(ThunderborgConfig, self.DynamicCallbak)
+            srv = Server(ThunderborgConfig, self.DynamicCallback)
         
         self.__thunderborg = thunderborg_lib.ThunderBorg()  # create the thunderborg object
         self.__thunderborg.Init()
@@ -85,7 +85,7 @@ class ThunderBorgNode:
         self.__odom_reset_sub = rospy.Subscriber("/commands/reset_odometry", Empty, self.ResetCallback)
 
     # Dynamic recofiguration of the PIDS
-    def DynamicCallbak(self, config, level):
+    def DynamicCallback(self, config, level):
         self.__pid1.tunings = (config.p_param, config.i_param, config.d_param)
         self.__pid2.tunings = (config.p_param, config.i_param, config.d_param)
         return config
@@ -151,8 +151,8 @@ class ThunderBorgNode:
     # Callback for tacho message
     def TachoCallback(self, msg):
         # Store the feedback values as velocity m/s
-        self.__feedback_velocity_right = (msg.rwheelrpm/60.0)*self.__wheel_circumfrence
-        self.__feedback_velocity_left = (msg.lwheelrpm/60.0)*self.__wheel_circumfrence
+        self.__feedback_velocity_right = (msg.rwheelrpm/60.0)*self.__wheel_circumference
+        self.__feedback_velocity_left = (msg.lwheelrpm/60.0)*self.__wheel_circumference
 
     # Callback for odometry reset command
     def ResetCallback(self, msg):
