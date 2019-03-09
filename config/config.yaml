@@ -1,8 +1,8 @@
 pid:
-  use_pid: true
+  use_pid: false
   inertia_level: 0.1
 wheels:
-  distance: 0.24
+  distance: 0.2423 
   circumference: 0.32
 speed:
   # Plot x=thunderborg value, y=m/s

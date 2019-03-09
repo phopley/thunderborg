@@ -2,6 +2,10 @@
 Changelog for package thunderborg
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Unreleased
+------------------
+* Added the height of the base_link above ground to odom
+
 0.1.1 (2019-01-28)
 ------------------
 * Add test code file test.py

@@ -240,7 +240,7 @@ class ThunderBorgNode:
         odom_quat = quaternion_from_euler(0, 0, self.__odom_th)
 
         # Send the transform
-        self.__odom_broadcaster.sendTransform((self.__odom_x, self.__odom_y, 0.0),
+        self.__odom_broadcaster.sendTransform((self.__odom_x, self.__odom_y, 0.09),
                                               odom_quat,
                                               current_time,
                                               'base_link',
@@ -251,7 +251,7 @@ class ThunderBorgNode:
         odom.header.stamp = current_time
         odom.header.frame_id = 'odom'
         # The pose is specified to the odom co-ordinate frame
-        odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, 0.), Quaternion(*odom_quat)) 
+        odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, 0.09), Quaternion(*odom_quat)) 
         # The Twist velocities is specified to the base_link co-ordinate frame
         odom.child_frame_id = 'base_link'
         odom.twist.twist = Twist(Vector3(velocity_x, velocity_y, 0), Vector3(0, 0, angular_velocity))
