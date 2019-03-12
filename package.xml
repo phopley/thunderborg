@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>thunderborg</name>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
   <description>The thunderborg motor control package</description>
 
   <maintainer email="philip@thehopleys.me.uk">Philip Hopley</maintainer>
@@ -11,19 +11,11 @@
   <author email="philip@thehopleys.me.uk">Philip Hopley</author>
 
   <buildtool_depend>catkin</buildtool_depend>
-  
-  <build_depend>rospy</build_depend>
-  <build_depend>sensor_msgs</build_depend>
-  <build_depend>geometry_msgs</build_depend>
-  <build_depend>dynamic_reconfiguration</build_depend>
-  
-  <build_export_depend>rospy</build_export_depend>
-  <build_export_depend>sensor_msgs</build_export_depend>
-  <build_export_depend>geometry_msgs</build_export_depend>
-  
-  <exec_depend>rospy</exec_depend>
+
+  <exec_depend>rospy</exec_depend>  
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tacho_msgs</exec_depend>
   <exec_depend>dynamic_reconfiguration</exec_depend>
 
 </package>

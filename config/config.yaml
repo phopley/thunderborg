@@ -3,7 +3,7 @@ pid:
   inertia_level: 0.1
 wheels:
   distance: 0.2423 
-  circumference: 0.32
+  circumference: 0.318
 speed:
   # Plot x=thunderborg value, y=m/s
   slope: 0.649776
