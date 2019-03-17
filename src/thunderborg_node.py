@@ -19,13 +19,14 @@ RATE = 20
 class ThunderBorgNode:
     def __init__(self):
         # Read values from parameter server
-        self.__use_pid = rospy.get_param('/pid/use_pid', False)
-        self.__wheel_distance = rospy.get_param('/wheels/distance', 0.23)
-        self.__wheel_circumference = rospy.get_param('/wheels/circumference', 0.34)
-        self.__speed_slope = rospy.get_param('/speed/slope', 1.5)
-        self.__speed_y_intercept = rospy.get_param('/speed/y_intercept', 0.4)
-        self.__inertia = rospy.get_param('/pid/inertia_level', 0.0)
-        self.__diag_msgs = rospy.get_param('/speed/motor_diag_msg', False)
+        self.__use_pid = rospy.get_param('/thunderborg_node/pid/use_pid', False)
+        self.__wheel_distance = rospy.get_param('/thunderborg_node/wheels/distance', 0.23)
+        self.__wheel_circumference = rospy.get_param('/thunderborg_node/wheels/circumference', 0.34)
+        self.__speed_slope = rospy.get_param('/thunderborg_node/speed/slope', 1.5)
+        self.__speed_y_intercept = rospy.get_param('/thunderborg_node/speed/y_intercept', 0.4)
+        self.__inertia = rospy.get_param('/thunderborg_node/pid/inertia_level', 0.0)
+        self.__diag_msgs = rospy.get_param('/thunderborg_node/speed/motor_diag_msg', False)
+        self.__base_height_above_ground = rospy.get_param('/thunderborg_node/base_height_above_ground', 0.09)
         
         if self.__use_pid == True:
             # Configure the PIDs. Dummy values of zero, the actual values we be set when
@@ -65,13 +66,10 @@ class ThunderBorgNode:
         
         # Publish topics
         self.__status_pub = rospy.Publisher("main_battery_status", BatteryState, queue_size=1)
-        self.__odom_pub = rospy.Publisher("odom", Odometry, queue_size=50)
+        self.__odom_pub = rospy.Publisher("raw_odom", Odometry, queue_size=50)
         if self.__diag_msgs == True:
             self.__diag1_pub = rospy.Publisher("motor1_diag", Vector3, queue_size=1)
             self.__diag2_pub = rospy.Publisher("motor2_diag", Vector3, queue_size=1)
-
-        # Setup tf broadcaster
-        self.__odom_broadcaster = tf.TransformBroadcaster()
 
         # ODOM values
         self.__odom_x = 0.0
@@ -82,7 +80,7 @@ class ThunderBorgNode:
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
         self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
-        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_odometry", Empty, self.ResetCallback)
+        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_raw_odometry", Empty, self.ResetCallback)
 
     # Dynamic recofiguration of the PIDS
     def DynamicCallback(self, config, level):
@@ -239,21 +237,14 @@ class ThunderBorgNode:
         # we need Yaw in a Quaternion
         odom_quat = quaternion_from_euler(0, 0, self.__odom_th)
 
-        # Send the transform
-        self.__odom_broadcaster.sendTransform((self.__odom_x, self.__odom_y, 0.09),
-                                              odom_quat,
-                                              current_time,
-                                              'base_link',
-                                              'odom')
-
         # Next publish the odometry message over ROS
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = 'odom'
         # The pose is specified to the odom co-ordinate frame
-        odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, 0.09), Quaternion(*odom_quat)) 
+        odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, self.__base_height_above_ground), Quaternion(*odom_quat)) 
         # The Twist velocities is specified to the base_link co-ordinate frame
-        odom.child_frame_id = 'base_link'
+        odom.child_frame_id = 'base_footprint'
         odom.twist.twist = Twist(Vector3(velocity_x, velocity_y, 0), Vector3(0, 0, angular_velocity))
         
         # Publish the message
