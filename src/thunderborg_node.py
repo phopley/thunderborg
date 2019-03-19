@@ -9,7 +9,6 @@ from geometry_msgs.msg import Vector3, Twist, Point, Pose, Quaternion
 from nav_msgs.msg import Odometry
 from dynamic_reconfigure.server import Server
 from tf.transformations import quaternion_from_euler
-from std_msgs.msg import Empty
 from tacho_msgs.msg import tacho
 from thunderborg.cfg import ThunderborgConfig
 from math import cos, sin
@@ -79,8 +78,7 @@ class ThunderBorgNode:
 
         # Subscribe to topics
         self.__vel_sub = rospy.Subscriber("cmd_vel",Twist, self.VelCallback)
-        self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)
-        self.__odom_reset_sub = rospy.Subscriber("/commands/reset_raw_odometry", Empty, self.ResetCallback)
+        self.__feedback_sub = rospy.Subscriber("tacho", tacho, self.TachoCallback)        
 
     # Dynamic recofiguration of the PIDS
     def DynamicCallback(self, config, level):
@@ -151,12 +149,6 @@ class ThunderBorgNode:
         # Store the feedback values as velocity m/s
         self.__feedback_velocity_right = (msg.rwheelrpm/60.0)*self.__wheel_circumference
         self.__feedback_velocity_left = (msg.lwheelrpm/60.0)*self.__wheel_circumference
-
-    # Callback for odometry reset command
-    def ResetCallback(self, msg):
-        self.__odom_x = 0.0
-        self.__odom_y = 0.0
-        self.__odom_th = 0.0
        
     # Publish the battery status    
     def PublishStatus(self):

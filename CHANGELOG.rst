@@ -2,6 +2,10 @@
 Changelog for package thunderborg
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.2.1 (2019-03-19)
+------------------
+* Deleted raw odom reset topic
+
 0.2.0 (2019-03-17)
 ------------------
 * Added the height of the base_link above ground to odom

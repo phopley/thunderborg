@@ -12,9 +12,6 @@ Topics:
 * `tacho`:  
   Subscribes using `tacho_msgs/tacho` A message with the current left and right motor rpm
   
-* `/commands/reset_raw_odometry`:  
-  Subscribes using `std_msgs/Empty` A command request to reset the raw odometry values to zero
-  
 * `main_battery_status`:  
   Publishes using `sensor_msgs/BatteryState` Message containing the state of the main battery
   
