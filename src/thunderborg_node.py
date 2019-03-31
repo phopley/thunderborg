@@ -17,25 +17,29 @@ RATE = 20
 
 class ThunderBorgNode:
     def __init__(self):
+        self.__setup = False   
         # Read values from parameter server
-        self.__use_pid = rospy.get_param('/thunderborg_node/pid/use_pid', False)
-        self.__wheel_distance = rospy.get_param('/thunderborg_node/wheels/distance', 0.23)
-        self.__wheel_circumference = rospy.get_param('/thunderborg_node/wheels/circumference', 0.34)
-        self.__speed_slope = rospy.get_param('/thunderborg_node/speed/slope', 1.5)
-        self.__speed_y_intercept = rospy.get_param('/thunderborg_node/speed/y_intercept', 0.4)
-        self.__inertia = rospy.get_param('/thunderborg_node/pid/inertia_level', 0.0)
-        self.__diag_msgs = rospy.get_param('/thunderborg_node/speed/motor_diag_msg', False)
-        self.__base_height_above_ground = rospy.get_param('/thunderborg_node/base_height_above_ground', 0.09)
+        # Using '~private_name' will prefix the parameters with the node name given in launch file
+        self.__use_pid = rospy.get_param('~pid/use_pid', False)
+        self.__wheel_distance = rospy.get_param('~wheels/distance', 0.23)        
+        self.__wheel_circumference = rospy.get_param('~wheels/circumference', 0.34)
+        self.__speed_slope = rospy.get_param('~speed/slope', 1.5)
+        self.__speed_y_intercept = rospy.get_param('~speed/y_intercept', 0.4)
+        self.__inertia = rospy.get_param('~pid/inertia_level', 0.0)
+        self.__diag_msgs = rospy.get_param('~speed/motor_diag_msg', False)        
+        
+        pid_p = rospy.get_param('~p_param', 0.0)
+        pid_i = rospy.get_param('~i_param', 0.0)
+        pid_d = rospy.get_param('~d_param', 0.0)
         
         if self.__use_pid == True:
-            # Configure the PIDs. Dummy values of zero, the actual values we be set when
-            # we start the dynamic reconfiguration server below.
-            self.__pid1 = PID(0.0, 0.0, 0.0, setpoint=0)
+            # Configure the PIDs. 
+            self.__pid1 = PID(pid_p, pid_i, pid_d, setpoint=0)
             self.__pid1.sample_time = 0.05
             # Limit the pid range. The PID will only work in positive values
             self.__pid1.output_limits = (self.__inertia, 1.0)
             
-            self.__pid2 = PID(0.0, 0.0, 0.0, setpoint=0)
+            self.__pid2 = PID(pid_p, pid_i, pid_d, setpoint=0)
             self.__pid2.sample_time = 0.05
             self.__pid2.output_limits = (self.__inertia, 1.0)
             
@@ -82,8 +86,19 @@ class ThunderBorgNode:
 
     # Dynamic recofiguration of the PIDS
     def DynamicCallback(self, config, level):
-        self.__pid1.tunings = (config.p_param, config.i_param, config.d_param)
-        self.__pid2.tunings = (config.p_param, config.i_param, config.d_param)
+        # First time called just store the configuration
+        if self.__setup == False:            
+            self.__default_config = config
+            self.__setup = True
+        else:
+            # Check to restore config
+            if config.restore_defaults == True:
+                config = self.__default_config
+                config.restore_defaults = False
+            
+            self.__pid1.tunings = (config.p_param, config.i_param, config.d_param)
+            self.__pid2.tunings = (config.p_param, config.i_param, config.d_param)            
+            
         return config
         
     # Function to calculate thunderborg setting from velocity
@@ -204,15 +219,17 @@ class ThunderBorgNode:
                 self.__diag1_pub.publish(motor1_state)
                 self.__diag2_pub.publish(motor2_state)
 
-    # the navigation stack requires that the odometry source publishes both a 
-    # transform and a nav/msgs/Odometry message.
+    # Publish odometry data
     def PublishOdom(self):
         forward_velocity = (self.__feedback_velocity_left + self.__feedback_velocity_right)/2
         angular_velocity = 2*(self.__feedback_velocity_right - forward_velocity)/self.__wheel_distance
 
         # Now the x and y velocities
-        velocity_x = forward_velocity * cos(angular_velocity)
-        velocity_y = forward_velocity * sin(angular_velocity)
+        velocity_x = forward_velocity
+        velocity_y = 0.0
+        
+        # Note: As we don't receive velocity y we could remove all reference to it below, but
+        # setting it to zero means we can keep the code generic below for future reference
 
         # Compute odometry from the calculate velocities
         current_time = rospy.Time.now()
@@ -233,11 +250,25 @@ class ThunderBorgNode:
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = 'odom'
-        # The pose is specified to the odom co-ordinate frame
-        odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, self.__base_height_above_ground), Quaternion(*odom_quat)) 
-        # The Twist velocities is specified to the base_link co-ordinate frame
+        
         odom.child_frame_id = 'base_footprint'
+        
+        odom.pose.pose = Pose(Point(self.__odom_x, self.__odom_y, 0.0), Quaternion(*odom_quat)) 
+        odom.pose.covariance = [0.001, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.001, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                0.0, 0.0, 0.0, 0.0, 0.0, 0.001]                                
+                                       
         odom.twist.twist = Twist(Vector3(velocity_x, velocity_y, 0), Vector3(0, 0, angular_velocity))
+        
+        odom.twist.covariance = [0.0001, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0001]        
         
         # Publish the message
         self.__odom_pub.publish(odom)

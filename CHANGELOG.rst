@@ -2,6 +2,15 @@
 Changelog for package thunderborg
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Unreleased
+------------------
+* Added functionality to restore defaults in reconfiguration
+* PID parameters now not only set from reconfiguration but alsp from config file
+* Parameters now use private names
+* Base height removed as the child frame is the base_footprint not the base_link
+* Added covariance figures for the odom message
+* Was incorrectly calculating y velocity. Should only use x velocity and velocity around z
+
 0.2.1 (2019-03-19)
 ------------------
 * Deleted raw odom reset topic

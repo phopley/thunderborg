@@ -19,13 +19,12 @@ Topics:
   Publishes using `nav_msgs/Odometry` Message containing the raw odometry data calculated from motor encoders
   
 * `motor1_diag`:  
-  Publishes using `geometry_msgs/Vector3` Message contaning diagnostic information for the right hand motor. This message is only published if the parameter server paramter `/speed/motor_diag_msg` is true
+  Publishes using `geometry_msgs/Vector3` Message contaning diagnostic information for the right hand motor. This message is only published if the parameter server paramter `~speed/motor_diag_msg` is true
   
 * `motor2_diag`:  
-  Publishes using `geometry_msgs/Vector3` Message contaning diagnostic information for the left hand motor. This message is only published if the parameter server paramter `/speed/motor_diag_msg` is true
+  Publishes using `geometry_msgs/Vector3` Message contaning diagnostic information for the left hand motor. This message is only published if the parameter server paramter `~speed/motor_diag_msg` is true
 
 Parameters:
-* `~base_height_above_ground`: A value giving the height in meters from the ground to the base_link. Default = 0.09
 * `~pid/use_pid`: A flag indicating if the PID should be used to contorl the motors. If True the PID is used. Default value = False
 * `~wheels/distance`: A value giving the distance in metres between the wheels. Default = 0.23
 * `~wheels/circumfrence`: A value giving the circumference of the wheels in metres. Default = 0.34
@@ -33,4 +32,7 @@ Parameters:
 * `~speed/y_intercept`: A value giving the Y intercept of the graph used to convert motor velocity to thunderborg motor value. Default = 0.4
 * `~pid/inertia_level`: A thunderborg motor value at which below the value the motors can't move the robot. Default = 0.0
 * `~speed/motor_diag_msg`: A flag indicating if the motor diagnostic messages should be published. Default = False
+* `~p_param`: The PID P parameter. can be configured dynamically. Default = 0.5
+* `~i_param`: The PID I parameter. can be configured dynamically. Default = 0.9
+* `~d_param`: The PID D parameter. can be configured dynamically. Default = 0.006
 

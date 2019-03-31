@@ -1,12 +1,14 @@
-base_height_above_ground: 0.09
+p_param: 0.5
+i_param: 0.9
+d_param: 0.006
 
 pid:
-  use_pid: false
+  use_pid: true  
   inertia_level: 0.1
   
 wheels:
-  distance: 0.2423 
-  circumference: 0.318
+  distance: 0.242
+  circumference: 0.317
   
 speed:
   # Plot x=thunderborg value, y=m/s
