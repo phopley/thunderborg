@@ -36,3 +36,6 @@ Parameters:
 * `~i_param`: The PID I parameter. can be configured dynamically. Default = 0.9
 * `~d_param`: The PID D parameter. can be configured dynamically. Default = 0.006
 
+## License
+Software source and object files are licensed under the Apache License, Version 2.0. See the License for the specific language governing permissions and limitations under the License.  
+The redistributed and or modified ThunderBorg.py file is not covered by this license.
