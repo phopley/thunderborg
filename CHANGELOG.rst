@@ -2,7 +2,7 @@
 Changelog for package thunderborg
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Unreleased
+1.0.0 (2019-04-05)
 ------------------
 * Added functionality to restore defaults in reconfiguration
 * PID parameters now not only set from reconfiguration but alsp from config file
